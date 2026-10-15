@@ -229,7 +229,7 @@ function buildSide(){
     <div class="sec" id="earthSec">
       <h2>Movimiento de tierras · implantación</h2>
       <div class="toggle" data-k="earth_mode" style="padding:4px 0">
-        <span class="dot" style="background:#ff2d55;border-radius:2px"></span>
+        <span class="dot" style="background:#e8338a;border-radius:2px"></span>
         <span class="tx">Activar diseño de plataforma</span><span class="sw"></span></div>
       <div id="earthBody" style="display:none">
         <div class="note" style="margin:8px 0">Área de implantación: 11.4 ha. El corte y el relleno se calculan solo dentro del polígono.</div>
@@ -242,9 +242,16 @@ function buildSide(){
           <input id="eOri" type="range" min="0" max="359" step="1" value="161"><span class="rv" id="eOriv">SSE</span></div>
         <div class="presets"><span class="chip" id="eNat">Caída natural hacia la ciénaga</span></div>
         <div class="toggle on" data-k="plane_show" style="padding:4px 0">
-          <span class="dot" style="background:#9db8e6;border-radius:2px"></span>
+          <span class="dot" style="background:#b9c6dc;border-radius:2px"></span>
           <span class="tx">Mostrar plano de diseño</span><span class="sw"></span></div>
+        <div class="toggle" data-k="drain_show" style="padding:4px 0">
+          <span class="dot" style="background:#2bb8e6;border-radius:2px"></span>
+          <span class="tx">Simular drenaje de la plataforma</span><span class="sw"></span></div>
+        <div class="note" style="display:flex;gap:16px;margin:6px 0 2px">
+          <span><span style="display:inline-block;width:10px;height:10px;background:#d1453b;border-radius:2px;vertical-align:-1px"></span> Corte</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#d8a33a;border-radius:2px;vertical-align:-1px"></span> Relleno</span></div>
         <div class="rout" id="eOut" style="margin-top:6px"></div>
+        <div id="eDrain"></div>
         <h2 style="margin-top:14px">Cálculo de valor</h2>
         <div class="pricerow"><label>Corte, COP por m³</label><input id="pCut" type="number" value="12000" step="500"></div>
         <div class="pricerow"><label>Relleno, COP por m³</label><input id="pFill" type="number" value="25000" step="500"></div>
@@ -469,7 +476,8 @@ function rainOffline(){
     monthly:[5,5,10,60,120,110,90,120,170,200,110,30], ref:true});
 }
 /* ===== MOVIMIENTO DE TIERRAS ===== */
-let paintMesh,paintCol,earthLine,planeMesh,planePos,earthOn=false,Ecen=0,Ncen=0,elevAbs=null,Earr=null,Narr=null;
+let paintMesh,paintCol,earthLine,planeMesh,planePos,planeEdge,drainSeg,drainSeeds=[],earthOn=false,Ecen=0,Ncen=0,elevAbs=null,Earr=null,Narr=null;
+const EMEAN=()=>meanZ+T.zmin; // cota absoluta media para pasar a coord de mundo
 function initEarthArrays(){
   const R=T.rows,C=T.cols,W=T.width_m,H=T.height_m,zc=T.z_cm,zmin=T.zmin,IP=GEO.earth.in_poly;
   elevAbs=new Float32Array(R*C);Earr=new Float32Array(R*C);Narr=new Float32Array(R*C);
@@ -499,15 +507,28 @@ function buildPaint(){
     ppos[i*3]=Earr[i];ppos[i*3+1]=baseY[i];ppos[i*3+2]=(r/(R-1)-0.5)*H;}
   const pg=new THREE.BufferGeometry();
   pg.setAttribute('position',new THREE.BufferAttribute(ppos,3)); pg.setIndex(idx.slice());
-  planeMesh=new THREE.Mesh(pg,new THREE.MeshBasicMaterial({color:0xe3ecfa,transparent:true,
-    opacity:.36,depthWrite:false,side:THREE.DoubleSide}));
+  planeMesh=new THREE.Mesh(pg,new THREE.MeshStandardMaterial({color:0xb9c6dc,transparent:true,
+    opacity:.62,depthWrite:false,roughness:.85,metalness:0,side:THREE.DoubleSide}));
   planeMesh.renderOrder=4; planeMesh.visible=false; group.add(planeMesh); planePos=pg.attributes.position;
+  // contorno de implantacion (sobre el terreno)
   const b=GEO.bounds,W=T.width_m,ring=GEO.earth.poly_wgs,p=[];
   ring.forEach(q=>{const cf=(q[0]-b[0])/(b[2]-b[0]),rf=(b[3]-q[1])/(b[3]-b[1]);
     p.push(new THREE.Vector3((cf-.5)*W, sampleZ(cf,rf)-meanZ+0.8, (rf-.5)*H));});
   earthLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints(p),
-    new THREE.LineBasicMaterial({color:0xff2d55})); earthLine.renderOrder=6;
+    new THREE.LineBasicMaterial({color:0xe8338a,linewidth:2})); earthLine.renderOrder=7;
   earthLine.visible=false; group.add(earthLine);
+  // borde del plano de diseño (se actualiza con la cota/pendiente)
+  planeEdge=new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring.map(()=>new THREE.Vector3())),
+    new THREE.LineBasicMaterial({color:0x34507e})); planeEdge.renderOrder=6;
+  planeEdge.visible=false; group.add(planeEdge);
+  // semillas de drenaje (subconjunto de vertices del poligono)
+  const IPd=GEO.earth.in_poly; drainSeeds=[];
+  for(let i=0;i<IPd.length;i+=5){ if(IPd[i]&&elevAbs[i]===elevAbs[i]) drainSeeds.push(i); }
+  const segPts=drainSeeds.length*3*2;
+  const da=new Float32Array(segPts*3);
+  const dg=new THREE.BufferGeometry(); dg.setAttribute('position',new THREE.BufferAttribute(da,3));
+  drainSeg=new THREE.LineSegments(dg,new THREE.LineBasicMaterial({color:0x2bb8e6,transparent:true,opacity:.9}));
+  drainSeg.renderOrder=8; drainSeg.visible=false; group.add(drainSeg);
 }
 function az2txt(a){const d=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'];
   return d[Math.round(a/22.5)%16];}
@@ -525,12 +546,13 @@ function computeEarth(){
   for(let i=0;i<IP.length;i++){ if(!IP[i]||!(elevAbs[i]===elevAbs[i])) continue;
     const d=(Earr[i]-Ecen)*ux+(Narr[i]-Ncen)*uy, plane=Zc-s*d, dif=elevAbs[i]-plane;
     if(planePos) planePos.array[i*3+1]=plane-(meanZ+T.zmin)+0.05;
-    if(dif>=0){cut+=dif*cellA; const t=Math.min(1,dif/DMAX);
-      col[i*3]=0.80+0.15*t; col[i*3+1]=0.32*(1-t); col[i*3+2]=0.22*(1-t);}
-    else{fill+=(-dif)*cellA; const t=Math.min(1,(-dif)/DMAX);
-      col[i*3]=0.12*(1-t); col[i*3+1]=0.42*(1-t)+0.12; col[i*3+2]=0.75+0.2*t;}
+    if(dif>=0){cut+=dif*cellA; const t=Math.min(1,dif/DMAX);           // CORTE: rojo
+      col[i*3]=0.74+0.18*t; col[i*3+1]=0.26-0.14*t; col[i*3+2]=0.22-0.10*t;}
+    else{fill+=(-dif)*cellA; const t=Math.min(1,(-dif)/DMAX);          // RELLENO: ocre tierra
+      col[i*3]=0.82+0.10*t; col[i*3+1]=0.62-0.16*t; col[i*3+2]=0.22-0.10*t;}
   }
   paintCol.needsUpdate=true; if(planePos)planePos.needsUpdate=true;
+  updatePlaneEdge(Zc,s,ux,uy); updateDrain(Zc,s,ux,uy,sp,az);
   const neto=cut-fill, fmt=n=>Math.round(n).toLocaleString('es-CO');
   document.getElementById('eOut').innerHTML=
     `<div class="ln"><span>Corte</span><b>${fmt(cut)} m³</b></div>
@@ -549,6 +571,34 @@ function computeEarth(){
      <div class="ln"><span>Acarreo neto</span><b>$ ${fmt(Math.abs(neto)*ph)}</b></div>
      <div class="ln" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span><b>Total</b></span><b>$ ${fmt(vTot)} COP</b></div>`;
 }
+function planeY(E,N,Zc,s,ux,uy){return (Zc - s*((E-Ecen)*ux+(N-Ncen)*uy)) - (meanZ+T.zmin);}
+function enFromLonLat(q){const b=GEO.bounds,W=T.width_m,H=T.height_m;
+  const cf=(q[0]-b[0])/(b[2]-b[0]), rf=(b[3]-q[1])/(b[3]-b[1]);
+  return {E:(cf-0.5)*W, N:(0.5-rf)*H};}
+function updatePlaneEdge(Zc,s,ux,uy){
+  if(!planeEdge)return; const ring=GEO.earth.poly_wgs, pos=planeEdge.geometry.attributes.position;
+  for(let i=0;i<ring.length;i++){const en=enFromLonLat(ring[i]);
+    pos.array[i*3]=en.E; pos.array[i*3+1]=planeY(en.E,en.N,Zc,s,ux,uy)+0.12; pos.array[i*3+2]=-en.N;}
+  pos.needsUpdate=true;
+}
+function updateDrain(Zc,s,ux,uy,sp,az){
+  if(drainSeg&&drainSeg.visible){
+    const arr=drainSeg.geometry.attributes.position.array, L=7,Lh=2.4; let k=0;
+    const ex=ux, ez=-uy;  // direccion de descenso en mundo (x, z=-N)
+    for(let si=0;si<drainSeeds.length;si++){const i=drainSeeds[si],E=Earr[i],N=Narr[i];
+      const x0=E,z0=-N,y0=planeY(E,N,Zc,s,ux,uy)+0.25;
+      const E1=E+ux*L,N1=N+uy*L,x1=E1,z1=-N1,y1=planeY(E1,N1,Zc,s,ux,uy)+0.25;
+      arr[k++]=x0;arr[k++]=y0;arr[k++]=z0; arr[k++]=x1;arr[k++]=y1;arr[k++]=z1;
+      for(const g of [1,-1]){const a=g*2.618;
+        const rx=ex*Math.cos(a)-ez*Math.sin(a), rz=ex*Math.sin(a)+ez*Math.cos(a);
+        arr[k++]=x1;arr[k++]=y1;arr[k++]=z1; arr[k++]=x1+rx*Lh;arr[k++]=y1;arr[k++]=z1+rz*Lh;}
+    }
+    drainSeg.geometry.attributes.position.needsUpdate=true;
+  }
+  const el=document.getElementById('eDrain'); if(el){ el.innerHTML = sp<0.25
+    ? `<div class="verd2 wet">Pendiente muy baja (${sp.toFixed(2)} %): riesgo de empozamiento sobre la plataforma. Sube la pendiente para asegurar el drenaje.</div>`
+    : `<div class="verd2 dry">La plataforma drena hacia el ${az2txt(az)} al ${sp.toFixed(2)} %. Escurrimiento superficial asegurado, sin encharcamiento por diseño.</div>`; }
+}
 function focusEarth(){ctrl.target.set(Ecen,0,-Ncen);
   cam.position.set(Ecen,T.width_m*0.5,-Ncen+T.width_m*0.6);ctrl.update();}
 function activateEarth(on){
@@ -557,7 +607,10 @@ function activateEarth(on){
   if(paintMesh)paintMesh.visible=on; if(earthLine)earthLine.visible=on;
   const pt=document.querySelector('.toggle[data-k="plane_show"]');
   const showPlane=pt?pt.classList.contains('on'):true;
-  if(planeMesh)planeMesh.visible=on&&showPlane;
+  if(planeMesh)planeMesh.visible=on&&showPlane; if(planeEdge)planeEdge.visible=on&&showPlane;
+  const dt=document.querySelector('.toggle[data-k="drain_show"]');
+  const showDrain=dt?dt.classList.contains('on'):false;
+  if(drainSeg)drainSeg.visible=on&&showDrain;
   document.getElementById('earthBody').style.display=on?'block':'none';
   if(on){computeEarth();focusEarth();}
 }
@@ -565,7 +618,8 @@ function applyExag(k){group.scale.y=k;document.getElementById('exagv').textConte
 function toggleLayer(k,on){ if(k==='predio'){predioLine.visible=on;return}
   if(k==='agua_lluvia'){if(waterMesh)waterMesh.visible=on;return}
   if(k==='earth_mode'){activateEarth(on);return}
-  if(k==='plane_show'){if(planeMesh)planeMesh.visible=on&&earthOn;return}
+  if(k==='plane_show'){const v=on&&earthOn;if(planeMesh)planeMesh.visible=v;if(planeEdge)planeEdge.visible=v;return}
+  if(k==='drain_show'){if(drainSeg){drainSeg.visible=on&&earthOn; if(drainSeg.visible)computeEarth();}return}
   if(overlayMeshes[k])overlayMeshes[k].visible=on; }
 function resetView(){const W=T.width_m;cam.position.set(W*0.05,W*0.62,W*0.92);ctrl.target.set(0,0,0);ctrl.update();}
 function animate(){requestAnimationFrame(animate); if(spin)group.rotation.y+=0.0016; stepRain(); ctrl.update(); ren.render(scene,cam);}
