@@ -195,52 +195,97 @@ function track(evento, extra){
 function imgInBox(doc,data,x,y,maxW,maxH){
   try{const p=doc.getImageProperties(data); const r=Math.min(maxW/p.width,maxH/p.height);
     const w=p.width*r,h=p.height*r,fmt=/image\/png/i.test(data.slice(0,24))?'PNG':'JPEG';
-    doc.addImage(data,fmt,x+(maxW-w)/2,y,w,h); return h;}catch(e){return 0;}
+    doc.addImage(data,fmt,x+(maxW-w)/2,y+(maxH-h)/2,w,h); return h;}catch(e){return 0;}
+}
+function cropBanner(src,asp){
+  try{const sw=src.width,sh=src.height,a=sw/sh; let cw,ch;
+    if(a>asp){ch=sh;cw=sh*asp;}else{cw=sw;ch=sw/asp;}
+    const c=document.createElement('canvas'); c.width=Math.round(cw); c.height=Math.round(ch);
+    c.getContext('2d').drawImage(src,(sw-cw)/2,(sh-ch)/2,cw,ch,0,0,c.width,c.height);
+    return c.toDataURL('image/jpeg',0.9);}catch(e){return null;}
+}
+function pdfHead(doc,x,y,txt){
+  doc.setFillColor(0,181,226); doc.rect(x,y-2.6,2.6,2.6,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(0,32,91);
+  doc.text(txt.toUpperCase(), x+4.5, y, {charSpace:0.4});
+  doc.setDrawColor(0,181,226); doc.setLineWidth(0.5); doc.line(x, y+2.6, 196, y+2.6);
+}
+function pdfTile(doc,x,y,w,h,label,value,unit,fill,vc){
+  if(fill){doc.setFillColor(243,246,251);doc.roundedRect(x,y,w,h,2,2,'F');}
+  else{doc.setDrawColor(228,233,240);doc.setLineWidth(0.3);doc.roundedRect(x,y,w,h,2,2,'S');}
+  doc.setFont('helvetica','bold');doc.setFontSize(6.4);doc.setTextColor(138,144,153);
+  doc.text(label.toUpperCase(),x+4,y+5.5,{charSpace:0.2});
+  doc.setFont('helvetica','bold');doc.setFontSize(12.5);doc.setTextColor(vc[0],vc[1],vc[2]);
+  doc.text(value,x+4,y+13.2);
+  if(unit){const vw=doc.getTextWidth(value);doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(99,102,106);doc.text(unit,x+4+vw+1.4,y+13.2);}
 }
 function generarPDF(){
   const msg=document.getElementById('eSaveMsg');
   if(!earthReady||!lastEarth){ msg.innerHTML='<span style="color:var(--bad)">Carga un polígono y calcula antes de generar el PDF.</span>'; return; }
   const J=window.jspdf&&window.jspdf.jsPDF; if(!J){ msg.innerHTML='<span style="color:var(--bad)">No se pudo cargar el generador de PDF.</span>'; return; }
-  const doc=new J({unit:'mm',format:'a4'}), P=210, M=14, fmt=n=>Math.round(n).toLocaleString('es-CO');
-  const navy=[0,32,91], sky=[0,181,226], gray=[99,102,106], light=[177,179,182], e=lastEarth;
-  doc.setFillColor(navy[0],navy[1],navy[2]); doc.rect(0,0,P,30,'F');
-  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(14);
-  doc.text('FICHA DE PREFACTIBILIDAD DEL PREDIO', M, 14, {charSpace:0.4});
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
-  doc.text((lastPredio||'Predio')+'    '+new Date().toLocaleDateString('es-CO'), M, 21);
-  doc.setTextColor(sky[0],sky[1],sky[2]); doc.setFontSize(8);
-  doc.text('PROMIGAS · GEOMÁTICA', M, 26.5, {charSpace:1});
-  let y=40;
-  doc.setTextColor(navy[0],navy[1],navy[2]); doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  doc.text('RESUMEN DE LA EVALUACIÓN', M, y); y+=2.5; doc.setDrawColor(sky[0],sky[1],sky[2]); doc.setLineWidth(0.6); doc.line(M,y,P-M,y); y+=7;
-  const kv=(x,yr,k,v)=>{doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(gray[0],gray[1],gray[2]);doc.text(k,x,yr);
-    doc.setFont('helvetica','bold');doc.setTextColor(navy[0],navy[1],navy[2]);doc.setFontSize(10);doc.text(''+v,x,yr+5);};
-  const col2=P/2+4;
-  const L=[['Área de implantación',e.ha.toFixed(2)+' ha'],['Arbolado a despejar',e.arb_ha.toFixed(2)+' ha'],
-    ['Área no recomendada (agua)',e.norec_ha.toFixed(2)+' ha'],['Geología (SGC)','Arcillas, expansividad media']];
-  const R=[['Cota y pendiente',e.cota+' m,  '+e.pend+' %'],['Corte y relleno',fmt(e.corte)+' / '+fmt(e.relleno)+' m³'],
-    ['Balance de material',(e.balance>=0?'+':'')+fmt(e.balance)+' m³'],['Costo preliminar','$ '+fmt(e.costo)+' COP']];
-  L.forEach((r,i)=>kv(M,y+i*13,r[0],r[1])); R.forEach((r,i)=>kv(col2,y+i*13,r[0],r[1]));
-  y+=13*4+4;
-  try{const snap=ren.domElement.toDataURL('image/png');
-    doc.setTextColor(navy[0],navy[1],navy[2]);doc.setFont('helvetica','bold');doc.setFontSize(11);
-    doc.text('MODELO DEL TERRENO Y PLATAFORMA', M, y); y+=2.5; doc.line(M,y,P-M,y); y+=5;
-    y+=imgInBox(doc,snap,M,y,P-2*M,95);}catch(err){}
-  // evidencias
-  doc.addPage();
-  doc.setFillColor(navy[0],navy[1],navy[2]); doc.rect(0,0,P,16,'F');
-  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  doc.text('EVIDENCIA TERRITORIAL', M, 10.5, {charSpace:0.4});
-  let ey=26, ex=M, bw=(P-2*M-6)/2, bh=44, col=0;
-  (GEO.evidencias||[]).forEach(ev=>{
-    imgInBox(doc,ev.img,ex,ey,bw,bh);
-    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(gray[0],gray[1],gray[2]);doc.text(ev.cap,ex,ey+bh+4.5);
-    col++; if(col%2===0){ex=M;ey+=bh+13;} else ex=M+bw+6;
-  });
-  doc.setFontSize(7.5); doc.setTextColor(light[0],light[1],light[2]);
-  doc.text('Prefactibilidad territorial. Volúmenes de precisión métrica desde el MDT, sin validación topográfica. El diseño y la cubicación firme son de ingeniería civil.', M, 284, {maxWidth:P-2*M});
-  doc.setTextColor(navy[0],navy[1],navy[2]); doc.setFont('helvetica','bold'); doc.setFontSize(8);
-  doc.text('SOMOS ENERGÍA QUE IMPULSA DESARROLLO', M, 293, {charSpace:1});
+  const doc=new J({unit:'mm',format:'a4'}), P=210, M=14, W=P-2*M, e=lastEarth, NV=[0,32,91];
+  const n2=v=>Number(v).toLocaleString('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const n0=v=>Math.round(v).toLocaleString('es-CO');
+  // encabezado
+  doc.setFillColor(0,32,91); doc.rect(0,0,P,26,'F');
+  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text('FICHA DE PREFACTIBILIDAD DEL PREDIO', M, 11, {charSpace:0.4});
+  const pname=(lastPredio||'Predio').toUpperCase();
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(0,181,226);
+  doc.text(pname, M, 18.5, {charSpace:0.4});
+  const pw=doc.getTextWidth(pname)+2;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(177,179,182);
+  doc.text('·  '+new Date().toLocaleDateString('es-CO'), M+pw+2, 18.5);
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(255);
+  doc.text('PROMIGAS', P-M, 12, {align:'right',charSpace:1});
+  doc.setFontSize(8); doc.setTextColor(0,181,226);
+  doc.text('GEOMÁTICA', P-M, 17.5, {align:'right',charSpace:2.5});
+  // resumen
+  let y=37; pdfHead(doc,M,y,'Resumen de la evaluación'); y+=8;
+  const tw=(W-8)/3, th=18;
+  pdfTile(doc,M,         y,tw,th,'Área de implantación', n2(e.ha),'ha',true,NV);
+  pdfTile(doc,M+tw+4,    y,tw,th,'Arbolado a despejar',  n2(e.arb_ha),'ha',true,NV);
+  pdfTile(doc,M+2*(tw+4),y,tw,th,'No recomendada (agua)',n2(e.norec_ha),'ha',true,NV);
+  y+=th+4;
+  pdfTile(doc,M,         y,tw,th,'Cota de plataforma', n2(e.cota),'m',true,NV);
+  pdfTile(doc,M+tw+4,    y,tw,th,'Pendiente de diseño',n2(e.pend),'%',true,NV);
+  pdfTile(doc,M+2*(tw+4),y,tw,th,'Orientación', az2txt(e.az),'',true,NV);
+  y+=th+9;
+  // movimiento de tierras
+  pdfHead(doc,M,y,'Movimiento de tierras'); y+=8;
+  pdfTile(doc,M,         y,tw,th,'Corte', n0(e.corte),'m³',false,NV);
+  pdfTile(doc,M+tw+4,    y,tw,th,'Relleno', n0(e.relleno),'m³',false,NV);
+  pdfTile(doc,M+2*(tw+4),y,tw,th,'Balance de material', (e.balance>=0?'+':'')+n0(e.balance),'m³',false,[74,119,41]);
+  y+=th+4;
+  doc.setFillColor(0,32,91); doc.roundedRect(M,y,W,14,2,2,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(159,180,214);
+  doc.text('COSTO PRELIMINAR DE ADECUACIÓN', M+6, y+8.6, {charSpace:0.6});
+  doc.setFontSize(15); doc.setTextColor(255);
+  doc.text('$ '+n0(e.costo), P-M-19, y+9, {align:'right'});
+  doc.setFontSize(9); doc.setTextColor(0,181,226); doc.text('COP', P-M-6, y+9, {align:'right'});
+  y+=14+9;
+  // modelo y evidencia
+  pdfHead(doc,M,y,'Modelo y evidencia territorial'); y+=7;
+  try{const snap=cropBanner(ren.domElement, W/52); if(snap)doc.addImage(snap,'JPEG',M,y,W,52);}catch(err){}
+  y+=52+3;
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(138,144,153);
+  doc.text('Modelo 3D del terreno con la plataforma de diseño', M, y); y+=5;
+  const ev={}; (GEO.evidencias||[]).forEach(o=>ev[o.id]=o);
+  const thumbs=[['terreno','Relieve del terreno (MDT)'],['hidro','Concentración de agua'],['ponding','Encharcamiento']];
+  const tbw=(W-8)/3, tbh=28;
+  thumbs.forEach((t,i)=>{const x=M+i*(tbw+4), o=ev[t[0]];
+    doc.setFillColor(11,17,24); doc.roundedRect(x,y,tbw,tbh,1.5,1.5,'F');
+    if(o)imgInBox(doc,o.img,x,y,tbw,tbh);
+    doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(138,144,153);doc.text(t[1],x,y+tbh+4);});
+  y+=tbh+9;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(99,102,106);
+  doc.text('Geología (SGC): depósitos aluviales, arcillas con expansividad media; capacidad portante baja probable.', M, y, {maxWidth:W});
+  // pie
+  doc.setDrawColor(216,221,228); doc.setLineWidth(0.3); doc.line(M,281,P-M,281);
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(154,160,168);
+  doc.text('Prefactibilidad territorial generada con GeoCosto. Volúmenes de precisión métrica desde el MDT, sin validación topográfica. La clasificación del material, la aptitud de las arcillas y la cubicación firmada son de ingeniería civil.', M, 285.5, {maxWidth:W});
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(0,32,91);
+  doc.text('SOMOS ENERGÍA QUE IMPULSA DESARROLLO', M, 293.5, {charSpace:2});
   doc.save('Ficha_'+(lastPredio||'predio').replace(/\s+/g,'_')+'.pdf');
   track('evaluacion', e); track('pdf', {predio:lastPredio});
   msg.innerHTML='<span style="color:var(--ok)">PDF generado y evaluación registrada.</span>';
