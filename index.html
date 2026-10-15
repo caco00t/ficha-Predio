@@ -247,9 +247,15 @@ function generarPDF(){
   pdfTile(doc,M+tw+4,    y,tw,th,'Arbolado a despejar',  n2(e.arb_ha),'ha',true,NV);
   pdfTile(doc,M+2*(tw+4),y,tw,th,'No recomendada (agua)',n2(e.norec_ha),'ha',true,NV);
   y+=th+4;
-  pdfTile(doc,M,         y,tw,th,'Cota de plataforma', n2(e.cota),'m',true,NV);
-  pdfTile(doc,M+tw+4,    y,tw,th,'Pendiente de diseño',n2(e.pend),'%',true,NV);
-  pdfTile(doc,M+2*(tw+4),y,tw,th,'Orientación', az2txt(e.az),'',true,NV);
+  if(e.multi){
+    pdfTile(doc,M,         y,tw,th,'Predios evaluados', ''+e.predios.length,'',true,NV);
+    pdfTile(doc,M+tw+4,    y,tw,th,'Pendiente de diseño',n2(e.pend),'%',true,NV);
+    pdfTile(doc,M+2*(tw+4),y,tw,th,'Cota', 'equilibrio','',true,NV);
+  } else {
+    pdfTile(doc,M,         y,tw,th,'Cota de plataforma', n2(e.cota),'m',true,NV);
+    pdfTile(doc,M+tw+4,    y,tw,th,'Pendiente de diseño',n2(e.pend),'%',true,NV);
+    pdfTile(doc,M+2*(tw+4),y,tw,th,'Orientación', az2txt(e.az),'',true,NV);
+  }
   y+=th+9;
   // movimiento de tierras
   pdfHead(doc,M,y,'Movimiento de tierras'); y+=8;
@@ -264,15 +270,28 @@ function generarPDF(){
   doc.text('$ '+n0(e.costo), P-M-19, y+9, {align:'right'});
   doc.setFontSize(9); doc.setTextColor(0,181,226); doc.text('COP', P-M-6, y+9, {align:'right'});
   y+=14+9;
+  // tabla por predio (multi)
+  if(e.multi){
+    pdfHead(doc,M,y,'Movimiento de tierras por predio'); y+=7;
+    doc.setFont('helvetica','bold');doc.setFontSize(7);doc.setTextColor(138,144,153);
+    doc.text('PREDIO',M,y);doc.text('ÁREA',M+66,y);doc.text('CORTE',M+96,y);doc.text('RELLENO',M+128,y);doc.text('COSTO',P-M,y,{align:'right'});
+    y+=2; doc.setDrawColor(228,233,240);doc.setLineWidth(0.3);doc.line(M,y,P-M,y); y+=5;
+    e.predios.forEach(pp=>{doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(40,55,70);
+      doc.text(pp.nombre,M,y);doc.text(pp.ha.toFixed(2)+' ha',M+66,y);doc.text(n0(pp.corte),M+96,y);doc.text(n0(pp.relleno),M+128,y);doc.text('$ '+n0(pp.costo),P-M,y,{align:'right'}); y+=6.5;});
+    doc.setDrawColor(228,233,240);doc.line(M,y-3.5,P-M,y-3.5);
+    doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(0,32,91);
+    doc.text('TOTAL',M,y);doc.text(n2(e.ha)+' ha',M+66,y);doc.text(n0(e.corte),M+96,y);doc.text(n0(e.relleno),M+128,y);doc.text('$ '+n0(e.costo),P-M,y,{align:'right'}); y+=9;
+  }
   // modelo y evidencia
+  const bannerH=e.multi?40:52;
   pdfHead(doc,M,y,'Modelo y evidencia territorial'); y+=7;
-  try{const snap=cropBanner(ren.domElement, W/52); if(snap)doc.addImage(snap,'JPEG',M,y,W,52);}catch(err){}
-  y+=52+3;
+  try{const snap=cropBanner(ren.domElement, W/bannerH); if(snap)doc.addImage(snap,'JPEG',M,y,W,bannerH);}catch(err){}
+  y+=bannerH+3;
   doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(138,144,153);
   doc.text('Modelo 3D del terreno con la plataforma de diseño', M, y); y+=5;
   const ev={}; (GEO.evidencias||[]).forEach(o=>ev[o.id]=o);
   const thumbs=[['terreno','Relieve del terreno (MDT)'],['hidro','Concentración de agua'],['ponding','Encharcamiento']];
-  const tbw=(W-8)/3, tbh=28;
+  const tbw=(W-8)/3, tbh=e.multi?24:28;
   thumbs.forEach((t,i)=>{const x=M+i*(tbw+4), o=ev[t[0]];
     doc.setFillColor(11,17,24); doc.roundedRect(x,y,tbw,tbh,1.5,1.5,'F');
     if(o)imgInBox(doc,o.img,x,y,tbw,tbh);
@@ -382,14 +401,14 @@ function buildSide(){
           <input id="eFile" type="file" accept=".kmz,.kml,.xml" style="display:none"></label>
         <div class="note" id="eStatus" style="margin:6px 0">Carga el polígono de implantación en formato KMZ o KML, dentro de esta zona volada, para obtener las áreas, los volúmenes y el costo.</div>
         <div id="eControls" style="display:none">
-        <div class="rrow"><label style="width:96px;font-size:11.5px">Cota media</label>
+        <div class="rrow" id="eCotaRow"><label style="width:96px;font-size:11.5px">Cota media</label>
           <input id="eCota" type="range" min="19" max="25" step="0.1" value="23.8"><span class="rv" id="eCotav">23.8 m</span></div>
-        <div class="presets"><span class="chip" id="eEquil">Cota de equilibrio</span></div>
+        <div class="presets" id="eEquilRow"><span class="chip" id="eEquil">Cota de equilibrio</span></div>
         <div class="rrow"><label style="width:96px;font-size:11.5px">Pendiente</label>
           <input id="ePend" type="range" min="0" max="2" step="0.05" value="0.75"><span class="rv" id="ePendv">0.75 %</span></div>
-        <div class="rrow"><label style="width:96px;font-size:11.5px">Orientación</label>
+        <div class="rrow" id="eOriRow"><label style="width:96px;font-size:11.5px">Orientación</label>
           <input id="eOri" type="range" min="0" max="359" step="1" value="161"><span class="rv" id="eOriv">SSE</span></div>
-        <div class="presets"><span class="chip" id="eNat">Caída natural hacia la ciénaga</span></div>
+        <div class="presets" id="eNatRow"><span class="chip" id="eNat">Caída natural hacia la ciénaga</span></div>
         <div class="toggle on" data-k="plane_show" style="padding:4px 0">
           <span class="dot" style="background:#b9c6dc;border-radius:2px"></span>
           <span class="tx">Mostrar plano de diseño</span><span class="sw"></span></div>
@@ -640,8 +659,8 @@ function rainOffline(){
     monthly:[5,5,10,60,120,110,90,120,170,200,110,30], ref:true});
 }
 /* ===== MOVIMIENTO DE TIERRAS (polígono cargable) ===== */
-let paintMesh,paintCol,earthLine,planeMesh,planePos,planeEdge,drainSeg,drainSeeds=[];
-let earthOn=false,earthReady=false,IPoly=null,polyRing=null,dynA=null,Ecen=0,Ncen=0,natAz=161,eqCota=22;
+let paintMesh,paintCol,earthLine,planeMesh,planePos,drainSeg,drainSeeds=[];
+let earthOn=false,earthReady=false,IPoly=null,vPoly=null,polys=[],ringsAll=[],multi=false,Ecen=0,Ncen=0,natAz=161,eqCota=22;
 let elevAbs=null,Earr=null,Narr=null;
 function initEarthArrays(){
   if(elevAbs)return;
@@ -675,21 +694,23 @@ function computeInPoly(ring){
   for(let r=0;r<R;r++)for(let c=0;c<C;c++){const i=r*C+c;
     const lon=b[0]+c/(C-1)*(b[2]-b[0]), lat=b[3]-r/(R-1)*(b[3]-b[1]);
     if(pnpoly(ring,lon,lat)){inCount++; if(elevAbs[i]===elevAbs[i]){ip[i]=1;inValid++;se+=Earr[i];sn+=Narr[i];}}}
-  Ecen=inValid?se/inValid:0; Ncen=inValid?sn/inValid:0;
-  return {ip,inCount,inValid};
+  return {ip,inCount,inValid,Ecen:inValid?se/inValid:0,Ncen:inValid?sn/inValid:0};
 }
-function computeAreas(){
+function polyAreas(ip){
   const cellA=GEO.earth.cellA_m2,Ar=GEO.earth.arbolado_f,Po=GEO.earth.ponding_f,Hi=GEO.earth.hidro_f;
   let impl=0,arb=0,no=0;
-  for(let i=0;i<IPoly.length;i++){if(!IPoly[i])continue; impl++;
+  for(let i=0;i<ip.length;i++){if(!ip[i])continue; impl++;
     const p=Po[i]/255,h=Hi[i]/255; arb+=Ar[i]/255; no+=(p+h-p*h);}
-  dynA={impl_m2:impl*cellA, arb_m2:arb*cellA, no_m2:no*cellA};
+  return {impl:impl*cellA, arb:arb*cellA, no:no*cellA};
 }
 function clearEarthMeshes(){
-  [paintMesh,planeMesh,earthLine,planeEdge,drainSeg].forEach(m=>{if(m){group.remove(m);
+  [paintMesh,planeMesh,earthLine,drainSeg].forEach(m=>{if(m){group.remove(m);
     if(m.geometry)m.geometry.dispose(); if(m.material)m.material.dispose();}});
-  paintMesh=planeMesh=earthLine=planeEdge=drainSeg=null; paintCol=planePos=null; drainSeeds=[];
+  paintMesh=planeMesh=earthLine=drainSeg=null; paintCol=planePos=null; drainSeeds=[];
 }
+function drape(q){const b=GEO.bounds,W=T.width_m,H=T.height_m;
+  const cf=(q[0]-b[0])/(b[2]-b[0]),rf=(b[3]-q[1])/(b[3]-b[1]);
+  return new THREE.Vector3((cf-.5)*W, sampleZ(cf,rf)-meanZ+0.8, (rf-.5)*H);}
 function buildEarthGeoms(){
   const R=T.rows,C=T.cols,H=T.height_m,IP=IPoly;
   const pos=new Float32Array(R*C*3),col=new Float32Array(R*C*3),idx=[];
@@ -709,12 +730,10 @@ function buildEarthGeoms(){
   planeMesh=new THREE.Mesh(pg,new THREE.MeshStandardMaterial({color:0xb9c6dc,transparent:true,opacity:.62,
     depthWrite:false,roughness:.85,metalness:0,side:THREE.DoubleSide}));
   planeMesh.renderOrder=4; group.add(planeMesh); planePos=pg.attributes.position;
-  const b=GEO.bounds,W=T.width_m, p=polyRing.map(q=>{const cf=(q[0]-b[0])/(b[2]-b[0]),rf=(b[3]-q[1])/(b[3]-b[1]);
-    return new THREE.Vector3((cf-.5)*W, sampleZ(cf,rf)-meanZ+0.8, (rf-.5)*H);});
-  earthLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints(p),new THREE.LineBasicMaterial({color:0xe8338a}));
+  // contornos de todos los predios
+  const lp=[]; ringsAll.forEach(ring=>{for(let i=0;i<ring.length;i++){lp.push(drape(ring[i]),drape(ring[(i+1)%ring.length]));}});
+  earthLine=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(lp),new THREE.LineBasicMaterial({color:0xe8338a}));
   earthLine.renderOrder=7; group.add(earthLine);
-  planeEdge=new THREE.Line(new THREE.BufferGeometry().setFromPoints(polyRing.map(()=>new THREE.Vector3())),
-    new THREE.LineBasicMaterial({color:0x34507e})); planeEdge.renderOrder=6; group.add(planeEdge);
   drainSeeds=[]; for(let i=0;i<IP.length;i+=5){if(IP[i])drainSeeds.push(i);}
   const da=new Float32Array(drainSeeds.length*3*2*3);
   let dg=new THREE.BufferGeometry(); dg.setAttribute('position',new THREE.BufferAttribute(da,3));
@@ -722,36 +741,50 @@ function buildEarthGeoms(){
   drainSeg.renderOrder=8; group.add(drainSeg);
   const show=k=>{const t=document.querySelector('.toggle[data-k="'+k+'"]');return t?t.classList.contains('on'):false;};
   paintMesh.visible=earthOn; earthLine.visible=earthOn;
-  planeMesh.visible=earthOn&&show('plane_show'); planeEdge.visible=planeMesh.visible;
+  planeMesh.visible=earthOn&&show('plane_show');
   drainSeg.visible=earthOn&&show('drain_show');
 }
-function loadPolygon(ring){
+function loadPolygons(rings){
   initEarthArrays();
-  const r=computeInPoly(ring);
-  const st=document.getElementById('eStatus');
-  if(r.inValid<20){ st.innerHTML='<span style="color:var(--bad)">El polígono no cae dentro de la zona volada por el dron. Carga uno dentro del área del MDT.</span>'; return; }
-  IPoly=r.ip; polyRing=ring;
-  let s=0,n=0; for(let i=0;i<IPoly.length;i++){if(IPoly[i]){s+=elevAbs[i];n++;}} eqCota=n?s/n:22;
-  natAz=fitAzimuth(IPoly); computeAreas();
+  const st=document.getElementById('eStatus'), R=T.rows,C=T.cols;
+  polys=[]; let fuera=0;
+  rings.forEach(ring=>{const r=computeInPoly(ring);
+    if(r.inValid<20){fuera++;return;}
+    let s=0,n=0; for(let i=0;i<r.ip.length;i++){if(r.ip[i]){s+=elevAbs[i];n++;}}
+    const eq=n?s/n:22, az=fitAzimuth(r.ip);
+    polys.push({ip:r.ip,ring:ring,Ecen:r.Ecen,Ncen:r.Ncen,eq:eq,az:az,
+      ux:Math.sin(az*Math.PI/180),uy:Math.cos(az*Math.PI/180),Zc:eq,areas:polyAreas(r.ip),cut:0,fill:0});});
+  if(!polys.length){ st.innerHTML='<span style="color:var(--bad)">Ningún polígono cae dentro de la zona volada por el dron.</span>'; return; }
+  multi=polys.length>1;
+  IPoly=new Uint8Array(R*C); vPoly=new Int16Array(R*C); vPoly.fill(-1);
+  let se=0,sn=0,nn=0;
+  polys.forEach((P,pi)=>{for(let i=0;i<P.ip.length;i++){if(P.ip[i]){ if(!IPoly[i]){IPoly[i]=1;vPoly[i]=pi;} se+=Earr[i];sn+=Narr[i];nn++; }}});
+  Ecen=nn?se/nn:0; Ncen=nn?sn/nn:0; ringsAll=polys.map(P=>P.ring);
+  eqCota=polys[0].eq; natAz=polys[0].az;
   clearEarthMeshes(); buildEarthGeoms();
-  document.getElementById('eCota').value=eqCota.toFixed(1);
-  document.getElementById('eOri').value=Math.round(natAz);
+  document.getElementById('eCota').value=polys[0].eq.toFixed(1);
+  document.getElementById('eOri').value=Math.round(polys[0].az);
+  ['eCotaRow','eOriRow','eEquilRow','eNatRow'].forEach(id=>{const el=document.getElementById(id); if(el)el.style.display=multi?'none':'';});
   earthReady=true; document.getElementById('eControls').style.display='block';
-  const clip=r.inCount>r.inValid*1.02;
-  st.innerHTML='Polígono cargado: '+(dynA.impl_m2/1e4).toFixed(2)+' ha dentro del MDT. Cota de equilibrio '+eqCota.toFixed(1)+' m, caída natural al '+az2txt(natAz)+'.'+
-    (clip?' <span style="color:var(--warn)">Parte del polígono queda fuera del vuelo; se calcula solo lo cubierto.</span>':'');
+  const totha=polys.reduce((a,P)=>a+P.areas.impl,0)/1e4;
+  st.innerHTML=(multi
+    ? polys.length+' predios cargados, total '+totha.toFixed(2)+' ha dentro del MDT. Cada predio se nivela a su cota de equilibrio y su caída natural.'
+    : 'Polígono cargado: '+totha.toFixed(2)+' ha dentro del MDT. Cota de equilibrio '+polys[0].eq.toFixed(1)+' m, caída natural al '+az2txt(polys[0].az)+'.')
+    +(fuera?' <span style="color:var(--warn)">'+fuera+' polígono(s) fuera del vuelo, no se analizan.</span>':'');
   computeEarth(); focusEarth();
-  track('poligono',{predio:lastPredio, ha:+(dynA.impl_m2/1e4).toFixed(2), arb_ha:+(dynA.arb_m2/1e4).toFixed(2), norec_ha:+(dynA.no_m2/1e4).toFixed(2)});
+  track('poligono',{predio:lastPredio, n:polys.length, ha:+totha.toFixed(2)});
 }
-function ringFromKML(txt){
-  const m=txt.match(/<coordinates>([\s\S]*?)<\/coordinates>/i); if(!m)return null;
-  const ring=[]; m[1].trim().split(/\s+/).forEach(t=>{const a=t.split(','); if(a.length>=2){const x=parseFloat(a[0]),y=parseFloat(a[1]); if(isFinite(x)&&isFinite(y))ring.push([x,y]);}});
-  return ring.length>=3?ring:null;
+function ringsFromKML(txt){
+  const out=[], ms=txt.match(/<coordinates>[\s\S]*?<\/coordinates>/gi)||[];
+  ms.forEach(block=>{const ring=[]; block.replace(/<\/?coordinates>/gi,'').trim().split(/\s+/).forEach(t=>{
+    const a=t.split(','); if(a.length>=2){const x=parseFloat(a[0]),y=parseFloat(a[1]); if(isFinite(x)&&isFinite(y))ring.push([x,y]);}});
+    if(ring.length>=3)out.push(ring);});
+  return out;
 }
 function handleFile(file){
   const st=document.getElementById('eStatus'), name=(file.name||'').toLowerCase();
   lastPredio=(file.name||'').replace(/\.(kmz|kml|xml)$/i,'');
-  const done=txt=>{const ring=ringFromKML(txt); if(ring)loadPolygon(ring);
+  const done=txt=>{const rings=ringsFromKML(txt); if(rings.length)loadPolygons(rings);
     else st.innerHTML='<span style="color:var(--bad)">No se encontró un polígono en el archivo.</span>';};
   st.textContent='Leyendo '+file.name+'…';
   if(name.endsWith('.kmz')){
@@ -764,84 +797,93 @@ function handleFile(file){
   } else { const fr=new FileReader(); fr.onload=e=>done(e.target.result); fr.readAsText(file); }
 }
 function computeEarth(){
-  if(!earthReady||!paintCol)return;
-  const Zc=parseFloat(document.getElementById('eCota').value),
-        sp=parseFloat(document.getElementById('ePend').value),
-        az=parseFloat(document.getElementById('eOri').value);
-  document.getElementById('eCotav').textContent=Zc.toFixed(1)+' m';
+  if(!earthReady||!paintCol||!polys.length)return;
+  const sp=parseFloat(document.getElementById('ePend').value);
   document.getElementById('ePendv').textContent=sp.toFixed(2)+' %';
-  document.getElementById('eOriv').textContent=az2txt(az);
-  const s=sp/100,ux=Math.sin(az*Math.PI/180),uy=Math.cos(az*Math.PI/180);
-  const IP=IPoly,cellA=GEO.earth.cellA_m2,col=paintCol.array,DMAX=3.0; let cut=0,fill=0;
-  for(let i=0;i<IP.length;i++){ if(!IP[i]||!(elevAbs[i]===elevAbs[i])) continue;
-    const d=(Earr[i]-Ecen)*ux+(Narr[i]-Ncen)*uy, plane=Zc-s*d, dif=elevAbs[i]-plane;
+  if(!multi){ const Zc=parseFloat(document.getElementById('eCota').value), az=parseFloat(document.getElementById('eOri').value);
+    document.getElementById('eCotav').textContent=Zc.toFixed(1)+' m'; document.getElementById('eOriv').textContent=az2txt(az);
+    polys[0].Zc=Zc; polys[0].ux=Math.sin(az*Math.PI/180); polys[0].uy=Math.cos(az*Math.PI/180);
+  } else { polys.forEach(P=>{P.Zc=P.eq;}); }
+  const s=sp/100, cellA=GEO.earth.cellA_m2, col=paintCol.array, DMAX=3.0;
+  polys.forEach(P=>{P.cut=0;P.fill=0;});
+  for(let i=0;i<IPoly.length;i++){ if(!IPoly[i]) continue; const pi=vPoly[i]; if(pi<0) continue; const P=polys[pi];
+    const d=(Earr[i]-P.Ecen)*P.ux+(Narr[i]-P.Ncen)*P.uy, plane=P.Zc-s*d, dif=elevAbs[i]-plane;
     if(planePos) planePos.array[i*3+1]=plane-(meanZ+T.zmin)+0.05;
-    if(dif>=0){cut+=dif*cellA; const t=Math.min(1,dif/DMAX);
-      col[i*3]=0.74+0.18*t; col[i*3+1]=0.26-0.14*t; col[i*3+2]=0.22-0.10*t;}
-    else{fill+=(-dif)*cellA; const t=Math.min(1,(-dif)/DMAX);
-      col[i*3]=0.82+0.10*t; col[i*3+1]=0.62-0.16*t; col[i*3+2]=0.22-0.10*t;}
+    if(dif>=0){P.cut+=dif*cellA; const t=Math.min(1,dif/DMAX); col[i*3]=0.74+0.18*t;col[i*3+1]=0.26-0.14*t;col[i*3+2]=0.22-0.10*t;}
+    else{P.fill+=(-dif)*cellA; const t=Math.min(1,(-dif)/DMAX); col[i*3]=0.82+0.10*t;col[i*3+1]=0.62-0.16*t;col[i*3+2]=0.22-0.10*t;}
   }
   paintCol.needsUpdate=true; if(planePos)planePos.needsUpdate=true;
-  updatePlaneEdge(Zc,s,ux,uy); updateDrain(Zc,s,ux,uy,sp,az);
+  updateDrain(s,sp);
   const fmt=n=>Math.round(n).toLocaleString('es-CO'), v=id=>+(document.getElementById(id)||{}).value||0;
-  const geo=GEO.earth.geologia||'';
-  const F=v('fExp')||1, dcm=v('fDesc'), mcm=v('fMej');
-  const aImpl=dynA.impl_m2||0, aArb=dynA.arb_m2||0, aNo=dynA.no_m2||0;
-  const volDesc=aImpl*dcm/100, volMej=aImpl*mcm/100, relBanco=fill*F, balMat=cut-relBanco;
-  document.getElementById('eAreas').innerHTML=
-    `<div class="big">Área de implantación: ${(aImpl/1e4).toFixed(2)} ha</div>
-     <div class="ln"><span>Arbolado a despejar</span><b>${(aArb/1e4).toFixed(2)} ha</b></div>
-     <div class="ln"><span>No recomendada (agua)</span><b>${(aNo/1e4).toFixed(2)} ha (${(aNo/aImpl*100).toFixed(0)} %)</b></div>
-     <div class="note" style="margin-top:5px">${geo}</div>`;
-  document.getElementById('eOut').innerHTML=
-    `<div class="big">Volúmenes de tierra</div>
-     <div class="ln"><span>Corte geométrico</span><b>${fmt(cut)} m³</b></div>
-     <div class="ln"><span>Relleno geométrico</span><b>${fmt(fill)} m³</b></div>
-     <div class="ln"><span>Corte de banco para el relleno (×${F})</span><b>${fmt(relBanco)} m³</b></div>
-     <div class="ln"><span>Balance de material</span><b>${balMat>=0?'+':''}${fmt(balMat)} m³</b></div>
-     <div class="verd2 ${Math.abs(balMat)<cut*0.12+500?'dry':'wet'}">${
-       Math.abs(balMat)<cut*0.12+500 ? 'Material cercano al equilibrio una vez ajustado por compactación.'
-       : (balMat>0 ? 'Excedente de corte para retirar del sitio (acarreo de salida).'
-                   : 'Déficit: hay que importar material de relleno.')}</div>`;
-  const cDesm=aArb*v('pDesm'), cDesc=volDesc*v('pDesc'), cCut=cut*v('pCut'), cFill=fill*v('pFill'),
-        cHaul=Math.abs(balMat)*v('pHaul'), cMej=volMej*v('pMej'), cAgua=aNo*v('pAgua');
-  const tot=cDesm+cDesc+cCut+cFill+cHaul+cMej+cAgua;
-  lastEarth={predio:lastPredio, ha:+(aImpl/1e4).toFixed(2), arb_ha:+(aArb/1e4).toFixed(2),
-    norec_ha:+(aNo/1e4).toFixed(2), cota:+Zc.toFixed(1), pend:+sp.toFixed(2), az:Math.round(az),
-    corte:Math.round(cut), relleno:Math.round(fill), balance:Math.round(balMat), costo:Math.round(tot)};
+  const F=v('fExp')||1,dcm=v('fDesc'),mcm=v('fMej'),pDesm=v('pDesm'),pDesc=v('pDesc'),pc=v('pCut'),pr=v('pFill'),ph=v('pHaul'),pMej=v('pMej'),pAgua=v('pAgua');
+  let Ti=0,Ta=0,Tn=0,Tc=0,Tf=0,Tb=0; const rows=[], predios=[];
+  polys.forEach((P,pi)=>{const a=P.areas, volD=a.impl*dcm/100, volM=a.impl*mcm/100, relB=P.fill*F, bal=P.cut-relB;
+    const costo=a.arb*pDesm+volD*pDesc+P.cut*pc+P.fill*pr+Math.abs(bal)*ph+volM*pMej+a.no*pAgua;
+    const nom=multi?('Predio '+(pi+1)):(lastPredio||'Predio');
+    rows.push({nom,ha:a.impl/1e4,corte:P.cut,relleno:P.fill,costo});
+    predios.push({nombre:nom,ha:+(a.impl/1e4).toFixed(2),arb_ha:+(a.arb/1e4).toFixed(2),norec_ha:+(a.no/1e4).toFixed(2),
+      cota:+P.Zc.toFixed(1),pend:+sp.toFixed(2),az:Math.round((Math.atan2(P.ux,P.uy)*180/Math.PI+360)%360),
+      corte:Math.round(P.cut),relleno:Math.round(P.fill),balance:Math.round(bal),costo:Math.round(costo)});
+    Ti+=a.impl;Ta+=a.arb;Tn+=a.no;Tc+=P.cut;Tf+=P.fill;Tb+=bal;});
+  const volDescT=Ti*dcm/100, volMejT=Ti*mcm/100;
+  const cDesm=Ta*pDesm,cDesc=volDescT*pDesc,cCut=Tc*pc,cFill=Tf*pr,cHaul=Math.abs(Tb)*ph,cMej=volMejT*pMej,cAgua=Tn*pAgua;
+  const totCost=cDesm+cDesc+cCut+cFill+cHaul+cMej+cAgua;
+  document.getElementById('eAreas').innerHTML = multi
+    ? `<div class="big">${polys.length} predios · total ${(Ti/1e4).toFixed(2)} ha</div>
+       <div class="ln"><span>Arbolado a despejar</span><b>${(Ta/1e4).toFixed(2)} ha</b></div>
+       <div class="ln"><span>No recomendada (agua)</span><b>${(Tn/1e4).toFixed(2)} ha</b></div>
+       <div class="note" style="margin-top:5px">${GEO.earth.geologia||''}</div>`
+    : `<div class="big">Área de implantación: ${(Ti/1e4).toFixed(2)} ha</div>
+       <div class="ln"><span>Arbolado a despejar</span><b>${(Ta/1e4).toFixed(2)} ha</b></div>
+       <div class="ln"><span>No recomendada (agua)</span><b>${(Tn/1e4).toFixed(2)} ha (${(Tn/Ti*100).toFixed(0)} %)</b></div>
+       <div class="note" style="margin-top:5px">${GEO.earth.geologia||''}</div>`;
+  if(multi){
+    let tb=`<div class="big">Movimiento de tierras por predio</div>`;
+    rows.forEach(r=>{tb+=`<div class="ln"><span>${r.nom} · ${r.ha.toFixed(2)} ha</span><b>C ${fmt(r.corte)} · R ${fmt(r.relleno)} m³</b></div>`;});
+    tb+=`<div class="ln" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span><b>Total</b></span><b>C ${fmt(Tc)} · R ${fmt(Tf)} m³</b></div>`;
+    document.getElementById('eOut').innerHTML=tb;
+  } else {
+    const P=polys[0], relB=P.fill*F, bal=P.cut-relB;
+    document.getElementById('eOut').innerHTML=
+      `<div class="big">Volúmenes de tierra</div>
+       <div class="ln"><span>Corte geométrico</span><b>${fmt(P.cut)} m³</b></div>
+       <div class="ln"><span>Relleno geométrico</span><b>${fmt(P.fill)} m³</b></div>
+       <div class="ln"><span>Corte de banco para el relleno (×${F})</span><b>${fmt(relB)} m³</b></div>
+       <div class="ln"><span>Balance de material</span><b>${bal>=0?'+':''}${fmt(bal)} m³</b></div>
+       <div class="verd2 ${Math.abs(bal)<P.cut*0.12+500?'dry':'wet'}">${Math.abs(bal)<P.cut*0.12+500?'Material cercano al equilibrio una vez ajustado por compactación.':(bal>0?'Excedente de corte para retirar del sitio.':'Déficit: hay que importar material de relleno.')}</div>`;
+  }
   document.getElementById('eVal').innerHTML=
-    `<div class="big">Costo preliminar de adecuación</div>
+    `<div class="big">Costo preliminar de adecuación${multi?' (total)':''}</div>
      <div class="ln"><span>Desmonte de arbolado</span><b>$ ${fmt(cDesm)}</b></div>
-     <div class="ln"><span>Descapote (${fmt(volDesc)} m³)</span><b>$ ${fmt(cDesc)}</b></div>
+     <div class="ln"><span>Descapote (${fmt(volDescT)} m³)</span><b>$ ${fmt(cDesc)}</b></div>
      <div class="ln"><span>Corte</span><b>$ ${fmt(cCut)}</b></div>
      <div class="ln"><span>Relleno</span><b>$ ${fmt(cFill)}</b></div>
      <div class="ln"><span>Acarreo de material</span><b>$ ${fmt(cHaul)}</b></div>
-     <div class="ln"><span>Mejoramiento de suelo (${fmt(volMej)} m³)</span><b>$ ${fmt(cMej)}</b></div>
+     <div class="ln"><span>Mejoramiento de suelo (${fmt(volMejT)} m³)</span><b>$ ${fmt(cMej)}</b></div>
      <div class="ln"><span>Manejo de aguas</span><b>$ ${fmt(cAgua)}</b></div>
-     <div class="ln" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span><b>Total</b></span><b>$ ${fmt(tot)} COP</b></div>`;
+     <div class="ln" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span><b>Total</b></span><b>$ ${fmt(totCost)} COP</b></div>`;
+  lastEarth={multi:multi, predios:predios, predio:lastPredio,
+    ha:+(Ti/1e4).toFixed(2), arb_ha:+(Ta/1e4).toFixed(2), norec_ha:+(Tn/1e4).toFixed(2),
+    cota:predios[0]?predios[0].cota:0, pend:+sp.toFixed(2), az:predios[0]?predios[0].az:0,
+    corte:Math.round(Tc), relleno:Math.round(Tf), balance:Math.round(Tb), costo:Math.round(totCost)};
 }
-function updatePlaneEdge(Zc,s,ux,uy){
-  if(!planeEdge||!polyRing)return; const pos=planeEdge.geometry.attributes.position;
-  for(let i=0;i<polyRing.length;i++){const en=lonlatToEN(polyRing[i][0],polyRing[i][1]);
-    pos.array[i*3]=en[0]; pos.array[i*3+1]=planeY(en[0],en[1],Zc,s,ux,uy)+0.12; pos.array[i*3+2]=-en[1];}
-  pos.needsUpdate=true;
-}
-function updateDrain(Zc,s,ux,uy,sp,az){
+function updateDrain(s,sp){
   if(drainSeg&&drainSeg.visible){
-    const arr=drainSeg.geometry.attributes.position.array, L=7,Lh=2.4; let k=0; const ex=ux, ez=-uy;
-    for(let si=0;si<drainSeeds.length;si++){const i=drainSeeds[si],E=Earr[i],N=Narr[i];
-      const x0=E,z0=-N,y0=planeY(E,N,Zc,s,ux,uy)+0.25;
-      const E1=E+ux*L,N1=N+uy*L,x1=E1,z1=-N1,y1=planeY(E1,N1,Zc,s,ux,uy)+0.25;
-      arr[k++]=x0;arr[k++]=y0;arr[k++]=z0; arr[k++]=x1;arr[k++]=y1;arr[k++]=z1;
-      for(const g of [1,-1]){const a=g*2.618;
-        const rx=ex*Math.cos(a)-ez*Math.sin(a), rz=ex*Math.sin(a)+ez*Math.cos(a);
-        arr[k++]=x1;arr[k++]=y1;arr[k++]=z1; arr[k++]=x1+rx*Lh;arr[k++]=y1;arr[k++]=z1+rz*Lh;}
+    const arr=drainSeg.geometry.attributes.position.array,L=7,Lh=2.4; let k=0;
+    for(let si=0;si<drainSeeds.length;si++){const i=drainSeeds[si],pi=vPoly[i]; if(pi<0)continue; const P=polys[pi];
+      const ux=P.ux,uy=P.uy,ex=ux,ez=-uy,E=Earr[i],N=Narr[i];
+      const yy=(E2,N2)=>(P.Zc-s*((E2-P.Ecen)*ux+(N2-P.Ncen)*uy))-(meanZ+T.zmin)+0.25;
+      const x0=E,z0=-N,y0=yy(E,N),E1=E+ux*L,N1=N+uy*L,x1=E1,z1=-N1,y1=yy(E1,N1);
+      arr[k++]=x0;arr[k++]=y0;arr[k++]=z0;arr[k++]=x1;arr[k++]=y1;arr[k++]=z1;
+      for(const g of[1,-1]){const a=g*2.618,rx=ex*Math.cos(a)-ez*Math.sin(a),rz=ex*Math.sin(a)+ez*Math.cos(a);
+        arr[k++]=x1;arr[k++]=y1;arr[k++]=z1;arr[k++]=x1+rx*Lh;arr[k++]=y1;arr[k++]=z1+rz*Lh;}
     }
+    for(;k<arr.length;k++)arr[k]=0;
     drainSeg.geometry.attributes.position.needsUpdate=true;
   }
   const el=document.getElementById('eDrain'); if(el){ el.innerHTML = sp<0.25
     ? `<div class="verd2 wet">Pendiente muy baja (${sp.toFixed(2)} %): riesgo de empozamiento sobre la plataforma. Sube la pendiente para asegurar el drenaje.</div>`
-    : `<div class="verd2 dry">La plataforma drena hacia el ${az2txt(az)} al ${sp.toFixed(2)} %. Escurrimiento superficial asegurado, sin encharcamiento por diseño.</div>`; }
+    : `<div class="verd2 dry">${multi?'Las plataformas drenan por su caída natural':'La plataforma drena'} al ${sp.toFixed(2)} %. Escurrimiento asegurado, sin encharcamiento por diseño.</div>`; }
 }
 function focusEarth(){ctrl.target.set(Ecen,0,-Ncen);
   cam.position.set(Ecen,T.width_m*0.5,-Ncen+T.width_m*0.6);ctrl.update();}
@@ -850,7 +892,7 @@ function activateEarth(on){
   document.getElementById('earthBody').style.display=on?'block':'none';
   const v=on&&earthReady, show=k=>{const t=document.querySelector('.toggle[data-k="'+k+'"]');return t?t.classList.contains('on'):false;};
   if(paintMesh)paintMesh.visible=v; if(earthLine)earthLine.visible=v;
-  if(planeMesh)planeMesh.visible=v&&show('plane_show'); if(planeEdge)planeEdge.visible=v&&show('plane_show');
+  if(planeMesh)planeMesh.visible=v&&show('plane_show');
   if(drainSeg)drainSeg.visible=v&&show('drain_show');
   if(v){computeEarth();focusEarth();}
 }
@@ -858,7 +900,7 @@ function applyExag(k){group.scale.y=k;document.getElementById('exagv').textConte
 function toggleLayer(k,on){ if(k==='predio'){predioLine.visible=on;return}
   if(k==='agua_lluvia'){if(waterMesh)waterMesh.visible=on;return}
   if(k==='earth_mode'){activateEarth(on);return}
-  if(k==='plane_show'){const v=on&&earthOn;if(planeMesh)planeMesh.visible=v;if(planeEdge)planeEdge.visible=v;return}
+  if(k==='plane_show'){if(planeMesh)planeMesh.visible=on&&earthOn;return}
   if(k==='drain_show'){if(drainSeg){drainSeg.visible=on&&earthOn; if(drainSeg.visible)computeEarth();}return}
   if(overlayMeshes[k])overlayMeshes[k].visible=on; }
 function resetView(){const W=T.width_m;cam.position.set(W*0.05,W*0.62,W*0.92);ctrl.target.set(0,0,0);ctrl.update();}
