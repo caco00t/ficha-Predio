@@ -183,7 +183,7 @@ const COL = {ok:'#1a9d5a',warn:'#d98b17',bad:'#d64545',na:'#9aa6b2',alto:'#d6454
 /* ===== MÉTRICAS DE USO ===== */
 const METRICS_ENDPOINT = "https://script.google.com/macros/s/AKfycbxBfcR5f3gSQE9p4lDmnLJpqwJm-wrUzpJZf1nBa90qUs5ODciaxu9H0nI4GKDhyZ0x/exec"; // webhook Google Apps Script
 const METRICS_APP = "ficha-predio-acuacar";
-let lastPredio="", lastEarth=null;
+let lastPredio="", lastEarth=null, lastRain=null;
 function track(evento, extra){
   const row=Object.assign({app:METRICS_APP, evento, ts:new Date().toISOString()}, extra||{});
   try{const k='geocosto_log',a=JSON.parse(localStorage.getItem(k)||'[]');a.push(row);
@@ -284,6 +284,40 @@ function generarPDF(){
   doc.setDrawColor(216,221,228); doc.setLineWidth(0.3); doc.line(M,281,P-M,281);
   doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(154,160,168);
   doc.text('Prefactibilidad territorial generada con GeoCosto. Volúmenes de precisión métrica desde el MDT, sin validación topográfica. La clasificación del material, la aptitud de las arcillas y la cubicación firmada son de ingeniería civil.', M, 285.5, {maxWidth:W});
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(0,32,91);
+  doc.text('SOMOS ENERGÍA QUE IMPULSA DESARROLLO', M, 293.5, {charSpace:2});
+  // ---- PÁGINA 2: ANÁLISIS TERRITORIAL COMPLETO ----
+  doc.addPage();
+  doc.setFillColor(0,32,91); doc.rect(0,0,P,20,'F');
+  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  doc.text('ANÁLISIS TERRITORIAL DEL PREDIO', M, 12.5, {charSpace:0.4});
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(0,181,226);
+  doc.text(pname, P-M, 12.5, {align:'right',charSpace:0.4});
+  let y2=30; pdfHead(doc,M,y2,'Indicadores del predio'); y2+=7;
+  const nivCol={ok:[26,157,90],warn:[217,139,23],na:[154,166,178],bad:[214,69,69],alto:[214,69,69]};
+  const cw=(W-6)/2, chh=31, inds=GEO.indicadores||[];
+  inds.forEach((it,i)=>{
+    const c=i%2, r=(i/2)|0, x=M+c*(cw+6), yy=y2+r*(chh+5);
+    doc.setDrawColor(228,233,240); doc.setLineWidth(0.3); doc.roundedRect(x,yy,cw,chh,2,2,'S');
+    const nc=nivCol[it.nivel]||nivCol.na; doc.setFillColor(nc[0],nc[1],nc[2]); doc.circle(x+5,yy+5.4,1.5,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(0,32,91);
+    doc.text(doc.splitTextToSize(it.nombre,cw-14).slice(0,1), x+9, yy+6.3);
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(90,100,112);
+    doc.text(doc.splitTextToSize(it.detalle||'',cw-10).slice(0,4), x+5, yy+12.3);
+    doc.setFont('helvetica','italic'); doc.setFontSize(6); doc.setTextColor(138,144,153);
+    doc.text(doc.splitTextToSize('Fuente: '+(it.fuente||'No aplica'),cw-10).slice(0,1), x+5, yy+chh-2.5);
+  });
+  let y3=y2+Math.ceil(inds.length/2)*(chh+5)+4;
+  pdfHead(doc,M,y3,'Simulación de lluvia'); y3+=7;
+  doc.setFillColor(243,246,251); doc.roundedRect(M,y3,W,24,2,2,'F');
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(60,75,89);
+  const rtxt = lastRain
+    ? 'Con '+lastRain.mm+' mm de lluvia en el día caen '+n0(lastRain.caida)+' m³ sobre el predio. Los bajos retienen '+n0(lastRain.retenido)+' m³ de su capacidad de '+n0(lastRain.cap)+' m³'+(lastRain.desborde>0?', y el resto ('+n0(lastRain.desborde)+' m³) escurre hacia las zonas de concentración de agua.':', sin desbordar.')
+    : 'Capacidad de retención de los bajos del predio: '+n0((GEO.rain||{}).pond_vol_m3||0)+' m³. La simulación estima cuánta lluvia retienen las depresiones antes de desbordar hacia el drenaje natural.';
+  doc.text(doc.splitTextToSize(rtxt, W-12), M+6, y3+6.5);
+  doc.setDrawColor(216,221,228); doc.setLineWidth(0.3); doc.line(M,281,P-M,281);
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(154,160,168);
+  doc.text('Fuentes: dron (Pix4D), Earth Engine (JRC, Sentinel-2, Sentinel-1, WorldCover), Open-Meteo, RUNAP y WDPA, Servicio Geológico Colombiano, PVGIS. Prefactibilidad territorial, no reemplaza estudios de detalle.', M, 285.5, {maxWidth:W});
   doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(0,32,91);
   doc.text('SOMOS ENERGÍA QUE IMPULSA DESARROLLO', M, 293.5, {charSpace:2});
   doc.save('Ficha_'+(lastPredio||'predio').replace(/\s+/g,'_')+'.pdf');
@@ -539,6 +573,7 @@ function simRain(mm){
   document.getElementById('rainMmv').textContent=mm+' mm';
   const caida=AREA*mm/1000, aBajos=caida*COEF;
   const retenido=Math.min(aBajos,CAP), f=CAP>0?retenido/CAP:0, desborde=Math.max(0,aBajos-CAP);
+  lastRain={mm:mm, caida:caida, retenido:retenido, cap:CAP, desborde:desborde};
   setFill(f);
   const fmt=n=>Math.round(n).toLocaleString('es-CO');
   const wet=desborde>0;
