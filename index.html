@@ -241,6 +241,9 @@ function buildSide(){
         <div class="rrow"><label style="width:96px;font-size:11.5px">Orientación</label>
           <input id="eOri" type="range" min="0" max="359" step="1" value="161"><span class="rv" id="eOriv">SSE</span></div>
         <div class="presets"><span class="chip" id="eNat">Caída natural hacia la ciénaga</span></div>
+        <div class="toggle on" data-k="plane_show" style="padding:4px 0">
+          <span class="dot" style="background:#9db8e6;border-radius:2px"></span>
+          <span class="tx">Mostrar plano de diseño</span><span class="sw"></span></div>
         <div class="rout" id="eOut" style="margin-top:6px"></div>
         <h2 style="margin-top:14px">Cálculo de valor</h2>
         <div class="pricerow"><label>Corte, COP por m³</label><input id="pCut" type="number" value="12000" step="500"></div>
@@ -466,7 +469,7 @@ function rainOffline(){
     monthly:[5,5,10,60,120,110,90,120,170,200,110,30], ref:true});
 }
 /* ===== MOVIMIENTO DE TIERRAS ===== */
-let paintMesh,paintCol,earthLine,earthOn=false,Ecen=0,Ncen=0,elevAbs=null,Earr=null,Narr=null;
+let paintMesh,paintCol,earthLine,planeMesh,planePos,earthOn=false,Ecen=0,Ncen=0,elevAbs=null,Earr=null,Narr=null;
 function initEarthArrays(){
   const R=T.rows,C=T.cols,W=T.width_m,H=T.height_m,zc=T.z_cm,zmin=T.zmin,IP=GEO.earth.in_poly;
   elevAbs=new Float32Array(R*C);Earr=new Float32Array(R*C);Narr=new Float32Array(R*C);
@@ -490,6 +493,15 @@ function buildPaint(){
   paintMesh=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,
     opacity:.85,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,side:THREE.DoubleSide}));
   paintMesh.renderOrder=5; paintMesh.visible=false; group.add(paintMesh); paintCol=g.attributes.color;
+  // plano de diseño translucido
+  const ppos=new Float32Array(R*C*3);
+  for(let r=0;r<R;r++)for(let c=0;c<C;c++){const i=r*C+c;
+    ppos[i*3]=Earr[i];ppos[i*3+1]=baseY[i];ppos[i*3+2]=(r/(R-1)-0.5)*H;}
+  const pg=new THREE.BufferGeometry();
+  pg.setAttribute('position',new THREE.BufferAttribute(ppos,3)); pg.setIndex(idx.slice());
+  planeMesh=new THREE.Mesh(pg,new THREE.MeshBasicMaterial({color:0xe3ecfa,transparent:true,
+    opacity:.36,depthWrite:false,side:THREE.DoubleSide}));
+  planeMesh.renderOrder=4; planeMesh.visible=false; group.add(planeMesh); planePos=pg.attributes.position;
   const b=GEO.bounds,W=T.width_m,ring=GEO.earth.poly_wgs,p=[];
   ring.forEach(q=>{const cf=(q[0]-b[0])/(b[2]-b[0]),rf=(b[3]-q[1])/(b[3]-b[1]);
     p.push(new THREE.Vector3((cf-.5)*W, sampleZ(cf,rf)-meanZ+0.8, (rf-.5)*H));});
@@ -512,12 +524,13 @@ function computeEarth(){
   let cut=0,fill=0;
   for(let i=0;i<IP.length;i++){ if(!IP[i]||!(elevAbs[i]===elevAbs[i])) continue;
     const d=(Earr[i]-Ecen)*ux+(Narr[i]-Ncen)*uy, plane=Zc-s*d, dif=elevAbs[i]-plane;
+    if(planePos) planePos.array[i*3+1]=plane-meanZ+0.05;
     if(dif>=0){cut+=dif*cellA; const t=Math.min(1,dif/DMAX);
       col[i*3]=0.80+0.15*t; col[i*3+1]=0.32*(1-t); col[i*3+2]=0.22*(1-t);}
     else{fill+=(-dif)*cellA; const t=Math.min(1,(-dif)/DMAX);
       col[i*3]=0.12*(1-t); col[i*3+1]=0.42*(1-t)+0.12; col[i*3+2]=0.75+0.2*t;}
   }
-  paintCol.needsUpdate=true;
+  paintCol.needsUpdate=true; if(planePos)planePos.needsUpdate=true;
   const neto=cut-fill, fmt=n=>Math.round(n).toLocaleString('es-CO');
   document.getElementById('eOut').innerHTML=
     `<div class="ln"><span>Corte</span><b>${fmt(cut)} m³</b></div>
@@ -542,6 +555,9 @@ function activateEarth(on){
   earthOn=on;
   if(on&&!paintMesh){initEarthArrays();buildPaint();}
   if(paintMesh)paintMesh.visible=on; if(earthLine)earthLine.visible=on;
+  const pt=document.querySelector('.toggle[data-k="plane_show"]');
+  const showPlane=pt?pt.classList.contains('on'):true;
+  if(planeMesh)planeMesh.visible=on&&showPlane;
   document.getElementById('earthBody').style.display=on?'block':'none';
   if(on){computeEarth();focusEarth();}
 }
@@ -549,6 +565,7 @@ function applyExag(k){group.scale.y=k;document.getElementById('exagv').textConte
 function toggleLayer(k,on){ if(k==='predio'){predioLine.visible=on;return}
   if(k==='agua_lluvia'){if(waterMesh)waterMesh.visible=on;return}
   if(k==='earth_mode'){activateEarth(on);return}
+  if(k==='plane_show'){if(planeMesh)planeMesh.visible=on&&earthOn;return}
   if(overlayMeshes[k])overlayMeshes[k].visible=on; }
 function resetView(){const W=T.width_m;cam.position.set(W*0.05,W*0.62,W*0.92);ctrl.target.set(0,0,0);ctrl.update();}
 function animate(){requestAnimationFrame(animate); if(spin)group.rotation.y+=0.0016; stepRain(); ctrl.update(); ren.render(scene,cam);}
