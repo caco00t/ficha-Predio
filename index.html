@@ -401,7 +401,11 @@ function buildSide(){
           <input id="eFile" type="file" accept=".kmz,.kml,.xml" style="display:none"></label>
         <div class="note" id="eStatus" style="margin:6px 0">Carga el polígono de implantación en formato KMZ o KML, dentro de esta zona volada, para obtener las áreas, los volúmenes y el costo.</div>
         <div id="eControls" style="display:none">
-        <div class="rrow" id="eCotaRow"><label style="width:96px;font-size:11.5px">Cota media</label>
+        <div id="eSelWrap" style="display:none">
+          <div class="note" style="margin:6px 0 2px">Modelar predio (cota y orientación):</div>
+          <div class="presets" id="eSel"></div>
+        </div>
+        <div class="rrow" id="eCotaRow"><label style="width:96px;font-size:11.5px">Cota</label>
           <input id="eCota" type="range" min="19" max="25" step="0.1" value="23.8"><span class="rv" id="eCotav">23.8 m</span></div>
         <div class="presets" id="eEquilRow"><span class="chip" id="eEquil">Cota de equilibrio</span></div>
         <div class="rrow"><label style="width:96px;font-size:11.5px">Pendiente</label>
@@ -660,7 +664,7 @@ function rainOffline(){
 }
 /* ===== MOVIMIENTO DE TIERRAS (polígono cargable) ===== */
 let paintMesh,paintCol,earthLine,planeMesh,planePos,drainSeg,drainSeeds=[];
-let earthOn=false,earthReady=false,IPoly=null,vPoly=null,polys=[],ringsAll=[],multi=false,Ecen=0,Ncen=0,natAz=161,eqCota=22;
+let earthOn=false,earthReady=false,IPoly=null,vPoly=null,polys=[],ringsAll=[],multi=false,activeIdx=0,Ecen=0,Ncen=0,natAz=161,eqCota=22;
 let elevAbs=null,Earr=null,Narr=null;
 function initEarthArrays(){
   if(elevAbs)return;
@@ -750,9 +754,9 @@ function loadPolygons(rings){
   polys=[]; let fuera=0;
   rings.forEach(ring=>{const r=computeInPoly(ring);
     if(r.inValid<20){fuera++;return;}
-    let s=0,n=0; for(let i=0;i<r.ip.length;i++){if(r.ip[i]){s+=elevAbs[i];n++;}}
+    let s=0,n=0,mn=1e9,mx=-1e9; for(let i=0;i<r.ip.length;i++){if(r.ip[i]){const z=elevAbs[i];s+=z;n++;if(z<mn)mn=z;if(z>mx)mx=z;}}
     const eq=n?s/n:22, az=fitAzimuth(r.ip);
-    polys.push({ip:r.ip,ring:ring,Ecen:r.Ecen,Ncen:r.Ncen,eq:eq,az:az,
+    polys.push({ip:r.ip,ring:ring,Ecen:r.Ecen,Ncen:r.Ncen,eq:eq,az:az,emin:mn,emax:mx,
       ux:Math.sin(az*Math.PI/180),uy:Math.cos(az*Math.PI/180),Zc:eq,areas:polyAreas(r.ip),cut:0,fill:0});});
   if(!polys.length){ st.innerHTML='<span style="color:var(--bad)">Ningún polígono cae dentro de la zona volada por el dron.</span>'; return; }
   multi=polys.length>1;
@@ -760,19 +764,33 @@ function loadPolygons(rings){
   let se=0,sn=0,nn=0;
   polys.forEach((P,pi)=>{for(let i=0;i<P.ip.length;i++){if(P.ip[i]){ if(!IPoly[i]){IPoly[i]=1;vPoly[i]=pi;} se+=Earr[i];sn+=Narr[i];nn++; }}});
   Ecen=nn?se/nn:0; Ncen=nn?sn/nn:0; ringsAll=polys.map(P=>P.ring);
-  eqCota=polys[0].eq; natAz=polys[0].az;
+  eqCota=polys[0].eq; natAz=polys[0].az; activeIdx=0;
   clearEarthMeshes(); buildEarthGeoms();
-  document.getElementById('eCota').value=polys[0].eq.toFixed(1);
-  document.getElementById('eOri').value=Math.round(polys[0].az);
-  ['eCotaRow','eOriRow','eEquilRow','eNatRow'].forEach(id=>{const el=document.getElementById(id); if(el)el.style.display=multi?'none':'';});
   earthReady=true; document.getElementById('eControls').style.display='block';
+  buildSelector(); selectPredio(0);
   const totha=polys.reduce((a,P)=>a+P.areas.impl,0)/1e4;
   st.innerHTML=(multi
-    ? polys.length+' predios cargados, total '+totha.toFixed(2)+' ha dentro del MDT. Cada predio se nivela a su cota de equilibrio y su caída natural.'
+    ? polys.length+' predios cargados, total '+totha.toFixed(2)+' ha dentro del MDT. Modela cada predio con el selector (cota y orientación).'
     : 'Polígono cargado: '+totha.toFixed(2)+' ha dentro del MDT. Cota de equilibrio '+polys[0].eq.toFixed(1)+' m, caída natural al '+az2txt(polys[0].az)+'.')
     +(fuera?' <span style="color:var(--warn)">'+fuera+' polígono(s) fuera del vuelo, no se analizan.</span>':'');
-  computeEarth(); focusEarth();
+  focusEarth();
   track('poligono',{predio:lastPredio, n:polys.length, ha:+totha.toFixed(2)});
+}
+function buildSelector(){
+  const wrap=document.getElementById('eSelWrap'), box=document.getElementById('eSel');
+  if(!wrap||!box)return; wrap.style.display=multi?'block':'none'; box.innerHTML='';
+  if(!multi)return;
+  polys.forEach((P,i)=>{const c=document.createElement('span');c.className='chip'+(i===activeIdx?' on':'');
+    c.textContent='Predio '+(i+1); c.onclick=()=>selectPredio(i); box.appendChild(c);});
+}
+function selectPredio(i){
+  if(!polys[i])return; activeIdx=i; const P=polys[i];
+  const cur=(Math.atan2(P.ux,P.uy)*180/Math.PI+360)%360;
+  const cEl=document.getElementById('eCota');
+  cEl.min=Math.floor(P.emin); cEl.max=Math.ceil(P.emax); cEl.step=0.1; cEl.value=P.Zc.toFixed(1);
+  document.getElementById('eOri').value=Math.round(cur);
+  const box=document.getElementById('eSel'); if(box&&multi)[...box.children].forEach((ch,k)=>ch.classList.toggle('on',k===i));
+  computeEarth();
 }
 function ringsFromKML(txt){
   const out=[], ms=txt.match(/<coordinates>[\s\S]*?<\/coordinates>/gi)||[];
@@ -800,10 +818,9 @@ function computeEarth(){
   if(!earthReady||!paintCol||!polys.length)return;
   const sp=parseFloat(document.getElementById('ePend').value);
   document.getElementById('ePendv').textContent=sp.toFixed(2)+' %';
-  if(!multi){ const Zc=parseFloat(document.getElementById('eCota').value), az=parseFloat(document.getElementById('eOri').value);
-    document.getElementById('eCotav').textContent=Zc.toFixed(1)+' m'; document.getElementById('eOriv').textContent=az2txt(az);
-    polys[0].Zc=Zc; polys[0].ux=Math.sin(az*Math.PI/180); polys[0].uy=Math.cos(az*Math.PI/180);
-  } else { polys.forEach(P=>{P.Zc=P.eq;}); }
+  const A=polys[activeIdx]||polys[0];
+  document.getElementById('eCotav').textContent=A.Zc.toFixed(1)+' m';
+  document.getElementById('eOriv').textContent=az2txt((Math.atan2(A.ux,A.uy)*180/Math.PI+360)%360);
   const s=sp/100, cellA=GEO.earth.cellA_m2, col=paintCol.array, DMAX=3.0;
   polys.forEach(P=>{P.cut=0;P.fill=0;});
   for(let i=0;i<IPoly.length;i++){ if(!IPoly[i]) continue; const pi=vPoly[i]; if(pi<0) continue; const P=polys[pi];
@@ -921,10 +938,12 @@ buildSide();
 if(window.THREE){ initWorld();
   document.getElementById('rainMm').oninput=e=>{setChip(null);simRain(parseInt(e.target.value));};
   document.getElementById('btnRain').onclick=playRainEvent;
-  ['eCota','ePend','eOri','fExp','fDesc','fMej','pDesm','pDesc','pCut','pFill','pHaul','pMej','pAgua'].forEach(id=>{
+  ['ePend','fExp','fDesc','fMej','pDesm','pDesc','pCut','pFill','pHaul','pMej','pAgua'].forEach(id=>{
     const el=document.getElementById(id); if(el)el.oninput=computeEarth; });
-  document.getElementById('eEquil').onclick=()=>{document.getElementById('eCota').value=eqCota.toFixed(1);computeEarth();};
-  document.getElementById('eNat').onclick=()=>{document.getElementById('eOri').value=Math.round(natAz);computeEarth();};
+  document.getElementById('eCota').oninput=e=>{ if(polys[activeIdx])polys[activeIdx].Zc=parseFloat(e.target.value); computeEarth(); };
+  document.getElementById('eOri').oninput=e=>{ const P=polys[activeIdx]; if(P){const a=parseFloat(e.target.value)*Math.PI/180;P.ux=Math.sin(a);P.uy=Math.cos(a);} computeEarth(); };
+  document.getElementById('eEquil').onclick=()=>{ const P=polys[activeIdx]; if(P){P.Zc=P.eq; document.getElementById('eCota').value=P.eq.toFixed(1);} computeEarth(); };
+  document.getElementById('eNat').onclick=()=>{ const P=polys[activeIdx]; if(P){const a=P.az*Math.PI/180;P.ux=Math.sin(a);P.uy=Math.cos(a); document.getElementById('eOri').value=Math.round(P.az);} computeEarth(); };
   document.getElementById('eFile').onchange=e=>{if(e.target.files&&e.target.files[0])handleFile(e.target.files[0]);};
   document.getElementById('ePdf').onclick=generarPDF;
   track('abrir');
