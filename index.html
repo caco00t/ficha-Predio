@@ -524,7 +524,7 @@ function computeEarth(){
   let cut=0,fill=0;
   for(let i=0;i<IP.length;i++){ if(!IP[i]||!(elevAbs[i]===elevAbs[i])) continue;
     const d=(Earr[i]-Ecen)*ux+(Narr[i]-Ncen)*uy, plane=Zc-s*d, dif=elevAbs[i]-plane;
-    if(planePos) planePos.array[i*3+1]=plane-meanZ+0.05;
+    if(planePos) planePos.array[i*3+1]=plane-(meanZ+T.zmin)+0.05;
     if(dif>=0){cut+=dif*cellA; const t=Math.min(1,dif/DMAX);
       col[i*3]=0.80+0.15*t; col[i*3+1]=0.32*(1-t); col[i*3+2]=0.22*(1-t);}
     else{fill+=(-dif)*cellA; const t=Math.min(1,(-dif)/DMAX);
